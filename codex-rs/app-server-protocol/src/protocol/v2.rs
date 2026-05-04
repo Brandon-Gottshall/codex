@@ -4426,6 +4426,64 @@ pub struct ThreadReadResponse {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
+pub struct DesktopThreadRouteParams {
+    pub thread_id: String,
+    /// When true, the desktop host may focus/raise its window while routing.
+    /// Omission means false so clients can request quiet routing by default.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub focus: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct DesktopThreadSelectionReadParams {}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub enum DesktopThreadRouteAuthority {
+    /// The app-server validated the requested thread, but no desktop host
+    /// confirmed that a GUI route occurred.
+    ValidatedOnly,
+    /// The current app-server build has no desktop-host route/readback adapter.
+    Unsupported,
+    /// A desktop host confirmed a native quiet route and readback.
+    NativeQuietRoute,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct DesktopThreadSelection {
+    pub thread_id: String,
+    pub focused: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct DesktopThreadRouteResponse {
+    pub thread_id: String,
+    pub focus: bool,
+    pub routed: bool,
+    pub authority: DesktopThreadRouteAuthority,
+    pub selection: Option<DesktopThreadSelection>,
+    pub reason: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct DesktopThreadSelectionReadResponse {
+    pub selection: Option<DesktopThreadSelection>,
+    pub authority: DesktopThreadRouteAuthority,
+    pub reason: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
 pub struct ThreadTurnsListParams {
     pub thread_id: String,
     /// Opaque cursor to pass to the next call to continue after the last turn.
@@ -8184,6 +8242,32 @@ mod tests {
         .expect("state db only flag should deserialize");
 
         assert!(params.use_state_db_only);
+    }
+
+    #[test]
+    fn desktop_thread_route_defaults_to_quiet_focus_policy() {
+        let params = serde_json::from_value::<DesktopThreadRouteParams>(json!({
+            "threadId": "019def36-5bbe-7932-b4b3-f6c979abd346"
+        }))
+        .expect("desktop route params should deserialize");
+
+        assert_eq!(params.thread_id, "019def36-5bbe-7932-b4b3-f6c979abd346");
+        assert!(!params.focus);
+    }
+
+    #[test]
+    fn desktop_thread_route_client_request_uses_expected_method() {
+        let request = serde_json::from_value::<crate::ClientRequest>(json!({
+            "method": "desktop/thread/route",
+            "id": 77,
+            "params": {
+                "threadId": "019def36-5bbe-7932-b4b3-f6c979abd346",
+                "focus": false
+            }
+        }))
+        .expect("desktop route request should deserialize");
+
+        assert_eq!(request.method(), "desktop/thread/route");
     }
 
     #[test]

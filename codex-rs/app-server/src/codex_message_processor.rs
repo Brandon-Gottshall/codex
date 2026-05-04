@@ -49,6 +49,11 @@ use codex_app_server_protocol::CollaborationModeListResponse;
 use codex_app_server_protocol::CommandExecParams;
 use codex_app_server_protocol::ConversationGitInfo;
 use codex_app_server_protocol::ConversationSummary;
+use codex_app_server_protocol::DesktopThreadRouteAuthority;
+use codex_app_server_protocol::DesktopThreadRouteParams;
+use codex_app_server_protocol::DesktopThreadRouteResponse;
+use codex_app_server_protocol::DesktopThreadSelectionReadParams;
+use codex_app_server_protocol::DesktopThreadSelectionReadResponse;
 use codex_app_server_protocol::DynamicToolSpec as ApiDynamicToolSpec;
 use codex_app_server_protocol::ExperimentalFeature as ApiExperimentalFeature;
 use codex_app_server_protocol::ExperimentalFeatureListParams;
@@ -1139,6 +1144,14 @@ impl CodexMessageProcessor {
                 .map(|response| Some(response.into())),
             ClientRequest::ThreadRead { params, .. } => self
                 .thread_read_response(params)
+                .await
+                .map(|response| Some(response.into())),
+            ClientRequest::DesktopThreadRoute { params, .. } => self
+                .desktop_thread_route_response(params)
+                .await
+                .map(|response| Some(response.into())),
+            ClientRequest::DesktopThreadSelectionRead { params, .. } => self
+                .desktop_thread_selection_read_response(params)
                 .await
                 .map(|response| Some(response.into())),
             ClientRequest::ThreadTurnsList { params, .. } => self
@@ -3777,6 +3790,48 @@ impl CodexMessageProcessor {
             .await
             .map_err(thread_read_view_error)?;
         Ok(ThreadReadResponse { thread })
+    }
+
+    async fn desktop_thread_route_response(
+        &self,
+        params: DesktopThreadRouteParams,
+    ) -> Result<DesktopThreadRouteResponse, JSONRPCErrorError> {
+        let DesktopThreadRouteParams { thread_id, focus } = params;
+        let thread_uuid = ThreadId::from_string(&thread_id)
+            .map_err(|err| invalid_request(format!("invalid thread id: {err}")))?;
+
+        // This open-source app-server can validate the target thread, but the
+        // native desktop client must perform and confirm GUI selection itself.
+        let _thread = self
+            .read_thread_view(thread_uuid, /* include_turns */ false)
+            .await
+            .map_err(thread_read_view_error)?;
+
+        Ok(DesktopThreadRouteResponse {
+            thread_id: thread_uuid.to_string(),
+            focus,
+            routed: false,
+            authority: DesktopThreadRouteAuthority::ValidatedOnly,
+            selection: None,
+            reason: Some(
+                "thread target validated, but this app-server has no desktop host adapter to route or read back GUI selection"
+                    .to_string(),
+            ),
+        })
+    }
+
+    async fn desktop_thread_selection_read_response(
+        &self,
+        _params: DesktopThreadSelectionReadParams,
+    ) -> Result<DesktopThreadSelectionReadResponse, JSONRPCErrorError> {
+        Ok(DesktopThreadSelectionReadResponse {
+            selection: None,
+            authority: DesktopThreadRouteAuthority::Unsupported,
+            reason: Some(
+                "desktop thread selection readback requires a native desktop host adapter"
+                    .to_string(),
+            ),
+        })
     }
 
     /// Builds the API view for `thread/read` from persisted metadata plus optional live state.

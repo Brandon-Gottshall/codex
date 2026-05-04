@@ -533,6 +533,24 @@
         }
       ]
     },
+    "DesktopThreadRouteParams": {
+      "properties": {
+        "focus": {
+          "description": "When true, the desktop host may focus/raise its window while routing. Omission means false so clients can request quiet routing by default.",
+          "type": "boolean"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "type": "object"
+    },
+    "DesktopThreadSelectionReadParams": {
+      "type": "object"
+    },
     "DeviceKeyCreateParams": {
       "description": "Create a controller-local device key with a random key id.",
       "properties": {
@@ -4860,6 +4878,54 @@
         "params"
       ],
       "title": "Thread/readRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "desktop/thread/route"
+          ],
+          "title": "Desktop/thread/routeRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/DesktopThreadRouteParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "Desktop/thread/routeRequest",
+      "type": "object"
+    },
+    {
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "desktop/thread/selection/read"
+          ],
+          "title": "Desktop/thread/selection/readRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/DesktopThreadSelectionReadParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "Desktop/thread/selection/readRequest",
       "type": "object"
     },
     {

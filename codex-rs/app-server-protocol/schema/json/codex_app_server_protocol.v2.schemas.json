@@ -1329,6 +1329,54 @@
           "type": "object"
         },
         {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
+                "desktop/thread/route"
+              ],
+              "title": "Desktop/thread/routeRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/DesktopThreadRouteParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Desktop/thread/routeRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
+                "desktop/thread/selection/read"
+              ],
+              "title": "Desktop/thread/selection/readRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/DesktopThreadSelectionReadParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Desktop/thread/selection/readRequest",
+          "type": "object"
+        },
+        {
           "description": "Append raw Responses API items to the thread history without starting a user turn.",
           "properties": {
             "id": {
@@ -4358,6 +4406,138 @@
         "summary"
       ],
       "title": "DeprecationNoticeNotification",
+      "type": "object"
+    },
+    "DesktopThreadRouteAuthority": {
+      "oneOf": [
+        {
+          "description": "The app-server validated the requested thread, but no desktop host confirmed that a GUI route occurred.",
+          "enum": [
+            "validatedOnly"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The current app-server build has no desktop-host route/readback adapter.",
+          "enum": [
+            "unsupported"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A desktop host confirmed a native quiet route and readback.",
+          "enum": [
+            "nativeQuietRoute"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "DesktopThreadRouteParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "focus": {
+          "description": "When true, the desktop host may focus/raise its window while routing. Omission means false so clients can request quiet routing by default.",
+          "type": "boolean"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "title": "DesktopThreadRouteParams",
+      "type": "object"
+    },
+    "DesktopThreadRouteResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "authority": {
+          "$ref": "#/definitions/DesktopThreadRouteAuthority"
+        },
+        "focus": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "routed": {
+          "type": "boolean"
+        },
+        "selection": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DesktopThreadSelection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "authority",
+        "focus",
+        "routed",
+        "threadId"
+      ],
+      "title": "DesktopThreadRouteResponse",
+      "type": "object"
+    },
+    "DesktopThreadSelection": {
+      "properties": {
+        "focused": {
+          "type": "boolean"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "focused",
+        "threadId"
+      ],
+      "type": "object"
+    },
+    "DesktopThreadSelectionReadParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "DesktopThreadSelectionReadParams",
+      "type": "object"
+    },
+    "DesktopThreadSelectionReadResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "authority": {
+          "$ref": "#/definitions/DesktopThreadRouteAuthority"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "selection": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/DesktopThreadSelection"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "authority"
+      ],
+      "title": "DesktopThreadSelectionReadResponse",
       "type": "object"
     },
     "DeviceKeyAlgorithm": {
