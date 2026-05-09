@@ -1,0 +1,83 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "definitions": {
+    "DesktopThreadRouteAuthority": {
+      "oneOf": [
+        {
+          "description": "The app-server validated the requested thread, but no desktop host confirmed that a GUI route occurred.",
+          "enum": [
+            "validatedOnly"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "The current app-server build has no desktop-host route/readback adapter.",
+          "enum": [
+            "unsupported"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "A desktop host confirmed a native quiet route and readback.",
+          "enum": [
+            "nativeQuietRoute"
+          ],
+          "type": "string"
+        }
+      ]
+    },
+    "DesktopThreadSelection": {
+      "properties": {
+        "focused": {
+          "type": "boolean"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "focused",
+        "threadId"
+      ],
+      "type": "object"
+    }
+  },
+  "properties": {
+    "authority": {
+      "$ref": "#/definitions/DesktopThreadRouteAuthority"
+    },
+    "focus": {
+      "type": "boolean"
+    },
+    "reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "routed": {
+      "type": "boolean"
+    },
+    "selection": {
+      "anyOf": [
+        {
+          "$ref": "#/definitions/DesktopThreadSelection"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "threadId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "authority",
+    "focus",
+    "routed",
+    "threadId"
+  ],
+  "title": "DesktopThreadRouteResponse",
+  "type": "object"
+}

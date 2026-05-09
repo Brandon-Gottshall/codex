@@ -564,6 +564,16 @@ client_request_definitions! {
         serialization: thread_id(params.thread_id),
         response: v2::ThreadReadResponse,
     },
+    DesktopThreadRoute => "desktop/thread/route" {
+        params: v2::DesktopThreadRouteParams,
+        serialization: thread_id(params.thread_id),
+        response: v2::DesktopThreadRouteResponse,
+    },
+    DesktopThreadSelectionRead => "desktop/thread/selection/read" {
+        params: v2::DesktopThreadSelectionReadParams,
+        serialization: None,
+        response: v2::DesktopThreadSelectionReadResponse,
+    },
     #[experimental("thread/turns/list")]
     ThreadTurnsList => "thread/turns/list" {
         params: v2::ThreadTurnsListParams,
