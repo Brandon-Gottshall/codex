@@ -3792,7 +3792,7 @@ impl CodexMessageProcessor {
         Ok(ThreadReadResponse { thread })
     }
 
-    async fn desktop_thread_route_response(
+    pub(crate) async fn desktop_thread_route_response(
         &self,
         params: DesktopThreadRouteParams,
     ) -> Result<DesktopThreadRouteResponse, JSONRPCErrorError> {
@@ -3820,7 +3820,7 @@ impl CodexMessageProcessor {
         })
     }
 
-    async fn desktop_thread_selection_read_response(
+    pub(crate) async fn desktop_thread_selection_read_response(
         &self,
         _params: DesktopThreadSelectionReadParams,
     ) -> Result<DesktopThreadSelectionReadResponse, JSONRPCErrorError> {

@@ -431,6 +431,24 @@
       ],
       "type": "object"
     },
+    "DesktopThreadRouteParams": {
+      "properties": {
+        "focus": {
+          "description": "When true, the desktop host may focus/raise its window while routing. Omission means false so clients can request quiet routing by default.",
+          "type": "boolean"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "threadId"
+      ],
+      "type": "object"
+    },
+    "DesktopThreadSelectionReadParams": {
+      "type": "object"
+    },
     "DynamicToolCallParams": {
       "properties": {
         "arguments": true,
@@ -1727,7 +1745,57 @@
   "description": "Request initiated from the server and sent to the client.",
   "oneOf": [
     {
-      "description": "NEW APIs Sent when approval is requested for a specific command execution. This request is used for Turns started via turn/start.",
+      "description": "NEW APIs Ask a connected desktop host to route its visible selection to a thread.",
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "desktop/thread/route/request"
+          ],
+          "title": "Desktop/thread/route/requestRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/DesktopThreadRouteParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "Desktop/thread/route/requestRequest",
+      "type": "object"
+    },
+    {
+      "description": "Ask a connected desktop host to read back its visible thread selection.",
+      "properties": {
+        "id": {
+          "$ref": "#/definitions/RequestId"
+        },
+        "method": {
+          "enum": [
+            "desktop/thread/selection/read/request"
+          ],
+          "title": "Desktop/thread/selection/read/requestRequestMethod",
+          "type": "string"
+        },
+        "params": {
+          "$ref": "#/definitions/DesktopThreadSelectionReadParams"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "params"
+      ],
+      "title": "Desktop/thread/selection/read/requestRequest",
+      "type": "object"
+    },
+    {
+      "description": "Sent when approval is requested for a specific command execution. This request is used for Turns started via turn/start.",
       "properties": {
         "id": {
           "$ref": "#/definitions/RequestId"
