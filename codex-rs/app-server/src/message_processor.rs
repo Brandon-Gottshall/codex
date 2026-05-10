@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::collections::HashSet;
 use std::future::Future;
 use std::sync::Arc;
@@ -39,6 +40,11 @@ use codex_app_server_protocol::ClientNotification;
 use codex_app_server_protocol::ClientRequest;
 use codex_app_server_protocol::ClientResponsePayload;
 use codex_app_server_protocol::ConfigWarningNotification;
+use codex_app_server_protocol::DesktopThreadRouteAuthority;
+use codex_app_server_protocol::DesktopThreadRouteParams;
+use codex_app_server_protocol::DesktopThreadRouteResponse;
+use codex_app_server_protocol::DesktopThreadSelectionReadParams;
+use codex_app_server_protocol::DesktopThreadSelectionReadResponse;
 use codex_app_server_protocol::ExperimentalApi;
 use codex_app_server_protocol::ExternalAgentConfigImportCompletedNotification;
 use codex_app_server_protocol::ExternalAgentConfigImportParams;
@@ -79,6 +85,8 @@ use codex_protocol::protocol::SessionSource;
 use codex_protocol::protocol::W3cTraceContext;
 use codex_state::log_db::LogDbLayer;
 use futures::FutureExt;
+use serde::de::DeserializeOwned;
+use tokio::sync::Mutex;
 use tokio::sync::broadcast;
 use tokio::sync::watch;
 use tokio::time::Duration;
@@ -86,6 +94,15 @@ use tokio::time::timeout;
 use tracing::Instrument;
 
 const EXTERNAL_AUTH_REFRESH_TIMEOUT: Duration = Duration::from_secs(10);
+const DESKTOP_HOST_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+
+const DESKTOP_HOST_CLIENT_NAMES: &[&str] = &[
+    "desktop-client",
+    "codex-desktop",
+    "codex_desktop",
+    "Codex Desktop",
+];
+
 #[derive(Clone)]
 struct ExternalAuthRefreshBridge {
     outgoing: Arc<OutgoingMessageSender>,
@@ -158,6 +175,7 @@ pub(crate) struct MessageProcessor {
     outgoing: Arc<OutgoingMessageSender>,
     codex_message_processor: CodexMessageProcessor,
     thread_manager: Arc<ThreadManager>,
+    desktop_host_connections: Mutex<HashMap<ConnectionId, DesktopHostConnection>>,
     config_api: ConfigApi,
     device_key_api: DeviceKeyApi,
     external_agent_config_api: ExternalAgentConfigApi,
@@ -170,6 +188,13 @@ pub(crate) struct MessageProcessor {
     rpc_transport: AppServerRpcTransport,
     remote_control_handle: Option<RemoteControlHandle>,
     request_serialization_queues: RequestSerializationQueues,
+}
+
+#[derive(Clone, Debug)]
+struct DesktopHostConnection {
+    connection_id: ConnectionId,
+    client_name: String,
+    client_version: String,
 }
 
 #[derive(Debug)]
@@ -341,6 +366,7 @@ impl MessageProcessor {
             outgoing,
             codex_message_processor,
             thread_manager: Arc::clone(&thread_manager),
+            desktop_host_connections: Mutex::new(HashMap::new()),
             config_api,
             device_key_api,
             external_agent_config_api,
@@ -558,6 +584,10 @@ impl MessageProcessor {
         connection_id: ConnectionId,
         session_state: &ConnectionSessionState,
     ) {
+        self.desktop_host_connections
+            .lock()
+            .await
+            .remove(&connection_id);
         session_state.rpc_gate.shutdown().await;
         self.outgoing.connection_closed(connection_id).await;
         self.fs_watch_manager.connection_closed(connection_id).await;
@@ -646,12 +676,14 @@ impl MessageProcessor {
                         .into_iter()
                         .collect(),
                     app_server_client_name: name.clone(),
-                    client_version: version,
+                    client_version: version.clone(),
                 })
                 .is_err()
             {
                 return Err(invalid_request("Already initialized"));
             }
+            self.maybe_register_desktop_host_connection(connection_id, &name, &version)
+                .await;
 
             // Only the request that wins session initialization may mutate
             // process-global client metadata.
@@ -925,6 +957,14 @@ impl MessageProcessor {
                 .handle_model_provider_capabilities_read()
                 .await
                 .map(|response| Some(response.into())),
+            ClientRequest::DesktopThreadRoute { params, .. } => self
+                .handle_desktop_thread_route(params, connection_id)
+                .await
+                .map(|response| Some(response.into())),
+            ClientRequest::DesktopThreadSelectionRead { params, .. } => self
+                .handle_desktop_thread_selection_read(params, connection_id)
+                .await
+                .map(|response| Some(response.into())),
             other => {
                 // Box the delegated future so this wrapper's async state machine does not
                 // inline the full `CodexMessageProcessor::process_request` future, which
@@ -955,6 +995,155 @@ impl MessageProcessor {
             }
         }
         Ok(())
+    }
+
+    async fn maybe_register_desktop_host_connection(
+        &self,
+        connection_id: ConnectionId,
+        client_name: &str,
+        client_version: &str,
+    ) {
+        if !is_desktop_host_client_name(client_name) {
+            return;
+        }
+
+        self.desktop_host_connections.lock().await.insert(
+            connection_id,
+            DesktopHostConnection {
+                connection_id,
+                client_name: client_name.to_string(),
+                client_version: client_version.to_string(),
+            },
+        );
+    }
+
+    async fn select_desktop_host_connection(
+        &self,
+        requester_connection_id: ConnectionId,
+    ) -> Option<DesktopHostConnection> {
+        let connections = self.desktop_host_connections.lock().await;
+        connections
+            .values()
+            .find(|connection| connection.connection_id != requester_connection_id)
+            .or_else(|| connections.values().next())
+            .cloned()
+    }
+
+    async fn handle_desktop_thread_route(
+        &self,
+        params: DesktopThreadRouteParams,
+        requester_connection_id: ConnectionId,
+    ) -> Result<DesktopThreadRouteResponse, JSONRPCErrorError> {
+        let fallback = self
+            .codex_message_processor
+            .desktop_thread_route_response(params.clone())
+            .await?;
+
+        let Some(host) = self
+            .select_desktop_host_connection(requester_connection_id)
+            .await
+        else {
+            return Ok(fallback);
+        };
+
+        let host_response = self
+            .request_desktop_host(
+                &host,
+                ServerRequestPayload::DesktopThreadRoute(params.clone()),
+                "desktop thread route",
+            )
+            .await;
+
+        match host_response {
+            Ok(response) => Ok(validate_desktop_thread_route_response(
+                &params,
+                fallback.thread_id.as_str(),
+                response,
+            )
+            .unwrap_or_else(|reason| desktop_route_validated_only(fallback, reason))),
+            Err(reason) => Ok(desktop_route_validated_only(
+                fallback,
+                format!(
+                    "desktop host {} {} did not confirm route/readback: {reason}",
+                    host.client_name, host.client_version
+                ),
+            )),
+        }
+    }
+
+    async fn handle_desktop_thread_selection_read(
+        &self,
+        params: DesktopThreadSelectionReadParams,
+        requester_connection_id: ConnectionId,
+    ) -> Result<DesktopThreadSelectionReadResponse, JSONRPCErrorError> {
+        let fallback = self
+            .codex_message_processor
+            .desktop_thread_selection_read_response(params.clone())
+            .await?;
+
+        let Some(host) = self
+            .select_desktop_host_connection(requester_connection_id)
+            .await
+        else {
+            return Ok(fallback);
+        };
+
+        let host_response = self
+            .request_desktop_host(
+                &host,
+                ServerRequestPayload::DesktopThreadSelectionRead(params),
+                "desktop thread selection read",
+            )
+            .await;
+
+        match host_response {
+            Ok(response) => match validate_desktop_thread_selection_read_response(response) {
+                Ok(response) => Ok(response),
+                Err(reason) => Ok(desktop_selection_read_unsupported(fallback, reason)),
+            },
+            Err(reason) => Ok(desktop_selection_read_unsupported(
+                fallback,
+                format!(
+                    "desktop host {} {} did not confirm selection readback: {reason}",
+                    host.client_name, host.client_version
+                ),
+            )),
+        }
+    }
+
+    async fn request_desktop_host<T>(
+        &self,
+        host: &DesktopHostConnection,
+        payload: ServerRequestPayload,
+        operation: &str,
+    ) -> Result<T, String>
+    where
+        T: DeserializeOwned,
+    {
+        let (request_id, rx) = self
+            .outgoing
+            .send_request_to_connection(host.connection_id, payload)
+            .await;
+
+        let result = match timeout(DESKTOP_HOST_REQUEST_TIMEOUT, rx).await {
+            Ok(result) => result.map_err(|err| format!("{operation} canceled: {err}"))?,
+            Err(_) => {
+                let _canceled = self.outgoing.cancel_request(&request_id).await;
+                return Err(format!(
+                    "{operation} timed out after {}s",
+                    DESKTOP_HOST_REQUEST_TIMEOUT.as_secs()
+                ));
+            }
+        };
+
+        let value = result.map_err(|err| {
+            format!(
+                "{operation} failed: code={} message={}",
+                err.code, err.message
+            )
+        })?;
+        serde_json::from_value(value)
+            .map_err(|err| format!("{operation} response could not be decoded: {err}"))
     }
 
     async fn handle_model_provider_capabilities_read(
@@ -1220,6 +1409,86 @@ fn migration_items_need_runtime_refresh(items: &[ExternalAgentConfigMigrationIte
                 | ExternalAgentConfigMigrationItemType::Plugins
         )
     })
+}
+
+fn is_desktop_host_client_name(client_name: &str) -> bool {
+    DESKTOP_HOST_CLIENT_NAMES
+        .iter()
+        .any(|known_name| client_name == *known_name)
+}
+
+fn validate_desktop_thread_route_response(
+    params: &DesktopThreadRouteParams,
+    expected_thread_id: &str,
+    response: DesktopThreadRouteResponse,
+) -> Result<DesktopThreadRouteResponse, String> {
+    if response.thread_id != expected_thread_id {
+        return Err(format!(
+            "desktop host routed thread `{}` but `{expected_thread_id}` was requested",
+            response.thread_id
+        ));
+    }
+    if response.focus != params.focus {
+        return Err(format!(
+            "desktop host echoed focus={} but focus={} was requested",
+            response.focus, params.focus
+        ));
+    }
+    if response.authority != DesktopThreadRouteAuthority::NativeQuietRoute {
+        return Err("desktop host did not claim native quiet route authority".to_string());
+    }
+    if !response.routed {
+        return Err("desktop host reported that no route occurred".to_string());
+    }
+    let Some(selection) = response.selection.as_ref() else {
+        return Err("desktop host did not include selection readback".to_string());
+    };
+    if selection.thread_id != expected_thread_id {
+        return Err(format!(
+            "desktop host read back selected thread `{}` but `{expected_thread_id}` was requested",
+            selection.thread_id
+        ));
+    }
+    if !params.focus && selection.focused {
+        return Err(
+            "desktop host reported focused selection while a quiet route was requested".to_string(),
+        );
+    }
+    Ok(response)
+}
+
+fn validate_desktop_thread_selection_read_response(
+    response: DesktopThreadSelectionReadResponse,
+) -> Result<DesktopThreadSelectionReadResponse, String> {
+    if response.authority != DesktopThreadRouteAuthority::NativeQuietRoute {
+        return Err("desktop host did not claim native selection read authority".to_string());
+    }
+    if let Some(selection) = response.selection.as_ref() {
+        ThreadId::from_string(&selection.thread_id)
+            .map_err(|err| format!("desktop host returned invalid selected thread id: {err}"))?;
+    }
+    Ok(response)
+}
+
+fn desktop_route_validated_only(
+    mut fallback: DesktopThreadRouteResponse,
+    reason: String,
+) -> DesktopThreadRouteResponse {
+    fallback.routed = false;
+    fallback.authority = DesktopThreadRouteAuthority::ValidatedOnly;
+    fallback.selection = None;
+    fallback.reason = Some(reason);
+    fallback
+}
+
+fn desktop_selection_read_unsupported(
+    mut fallback: DesktopThreadSelectionReadResponse,
+    reason: String,
+) -> DesktopThreadSelectionReadResponse {
+    fallback.selection = None;
+    fallback.authority = DesktopThreadRouteAuthority::Unsupported;
+    fallback.reason = Some(reason);
+    fallback
 }
 
 #[cfg(test)]

@@ -14,6 +14,7 @@ use codex_app_server_protocol::JSONRPCNotification;
 use codex_app_server_protocol::JSONRPCRequest;
 use codex_app_server_protocol::JSONRPCResponse;
 use codex_app_server_protocol::RequestId;
+use codex_app_server_protocol::ServerRequest;
 use codex_app_server_protocol::ThreadLoadedListParams;
 use codex_app_server_protocol::ThreadLoadedListResponse;
 use codex_app_server_protocol::ThreadStartParams;
@@ -707,6 +708,18 @@ pub(super) async fn send_request(
     send_jsonrpc(stream, message).await
 }
 
+pub(super) async fn send_response(
+    stream: &mut WsClient,
+    id: RequestId,
+    result: serde_json::Value,
+) -> Result<()> {
+    send_jsonrpc(
+        stream,
+        JSONRPCMessage::Response(JSONRPCResponse { id, result }),
+    )
+    .await
+}
+
 async fn send_jsonrpc(stream: &mut WsClient, message: JSONRPCMessage) -> Result<()> {
     let payload = serde_json::to_string(&message)?;
     stream
@@ -726,6 +739,17 @@ pub(super) async fn read_response_for_id(
             && response.id == target_id
         {
             return Ok(response);
+        }
+    }
+}
+
+pub(super) async fn read_server_request(stream: &mut WsClient) -> Result<ServerRequest> {
+    loop {
+        let message = read_jsonrpc_message(stream).await?;
+        if let JSONRPCMessage::Request(request) = message {
+            return request
+                .try_into()
+                .context("failed to decode server request");
         }
     }
 }

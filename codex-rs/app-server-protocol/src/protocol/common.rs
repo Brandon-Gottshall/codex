@@ -1239,6 +1239,18 @@ impl TryFrom<JSONRPCRequest> for ServerRequest {
 
 server_request_definitions! {
     /// NEW APIs
+    /// Ask a connected desktop host to route its visible selection to a thread.
+    DesktopThreadRoute => "desktop/thread/route/request" {
+        params: v2::DesktopThreadRouteParams,
+        response: v2::DesktopThreadRouteResponse,
+    },
+
+    /// Ask a connected desktop host to read back its visible thread selection.
+    DesktopThreadSelectionRead => "desktop/thread/selection/read/request" {
+        params: v2::DesktopThreadSelectionReadParams,
+        response: v2::DesktopThreadSelectionReadResponse,
+    },
+
     /// Sent when approval is requested for a specific command execution.
     /// This request is used for Turns started via turn/start.
     CommandExecutionRequestApproval => "item/commandExecution/requestApproval" {
